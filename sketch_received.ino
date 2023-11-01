@@ -1,76 +1,63 @@
 #include <WiFiNINA.h>
+#include <BH1750.h>
 #include <Wire.h>
-#include <secrets.h>  // Include Wi-Fi credentials in this file
 
-#define THRESHOLD_LUX 1000  // Set lux level threshold for sunlight detection
+char ssid[] = "Diya's iPhone";      // Replace with your Wi-Fi SSID
+char pass[] = "12345678";  // Replace with your Wi-Fi password
 
-// Define Wi-Fi credentials
-char ssid[] = SECRET_SSID;      // Replace with your Wi-Fi network SSID
-char pass[] = SECRET_PASSWORD;  // Replace with your Wi-Fi network password
+WiFiClient client; 
+BH1750 lightMeter;
 
-WiFiClient client;
-
-char   HOST_NAME[] = "maker.ifttt.com"; // IFTTT Maker Webhooks host
-String PATH_NAME   = "sketch_received";  // Define the event name to trigger in IFTTT (CHANGE as needed)
-String queryString = "?value1=57&value2=25"; // Include additional data to send to IFTTT
-
-BH1750 lightMeter; // Initialize the BH1750 light sensor
-
-bool isSunlightPresent = false;
-int sunlightEnterEventSent = false;
-int sunlightLeaveEventSent = false;
+char HOST_NAME[] = "maker.ifttt.com";
+String PATH_NAME = "/trigger/light/json/with/key/ofHfOy24U8Z572xy8SHdtZm97CE8nfjBDo4YKZq9o4J";
 
 void setup() {
-  // Initialize Wi-Fi connection
-  WiFi.begin(ssid, pass);
   Serial.begin(9600);
   while (!Serial);
 
-  // Connect to the IFTTT server on port 80
-  if (client.connect(HOST_NAME, 80)) {
-    Serial.println("Connected to the IFTTT server");
-  } else {
-    Serial.println("Connection to the IFTTT server failed");
+  WiFi.begin(ssid, pass);
+  Wire.begin();
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
   }
 
-  // Initialize the BH1750 light sensor
-  Wire.begin();
+  Serial.println("Connected to WiFi"); 
   lightMeter.begin();
 }
 
 void loop() {
-  if (Serial.read() == 's') {
-    // Read the current sunlight intensity
-    float lux = lightMeter.readLightLevel();
+  float lux = lightMeter.readLightLevel();
 
-    if (lux > THRESHOLD_LUX && !isSunlightPresent) {
-      if (!sunlightEnterEventSent) {
-        // Send an IFTTT notification indicating sunlight entering the terrarium
-        // (Call the sendIFTTTNotification function here)
-        sunlightEnterEventSent = true;
-        sunlightLeaveEventSent = false;
+  Serial.print("Light: ");
+  Serial.print(lux);
+  Serial.println(" lx");
+
+  if (lux > 100 ) {
+    String queryString = "?value1=" + String(lux);
+   
+    //Make an HTTP request to the IFTTT webhook:
+    if (client.connect(HOST_NAME, 80)) {
+      // Send HTTP header
+      client.println("GET " + PATH_NAME + queryString + " HTTP/1.1");
+      client.println("Host: " + String(HOST_NAME));
+      client.println("Connection: close");
+      client.println(); // End HTTP header
+
+      while (client.connected()) {
+        if (client.available()) {
+          // Read an incoming byte from the server and print it to the Serial Monitor:
+          char c = client.read();
+          Serial.print(c);
+        }
       }
-      isSunlightPresent = true;
-    } else if (lux <= THRESHOLD_LUX && isSunlightPresent) {
-      if (!sunlightLeaveEventSent) {
-        // Send an IFTTT notification indicating sunlight leaving the terrarium
-        // (Call the sendIFTTTNotification function here)
-        sunlightLeaveEventSent = true;
-        sunlightEnterEventSent = false;
-      }
-      isSunlightPresent = false;
+      // The server's disconnected, stop the client:
+      client.stop();
+      Serial.println();
+      Serial.println("Disconnected");
     }
 
-    // Make an HTTP request to IFTTT for notification (Code for sending data to IFTTT)
-    
-    while (client.connected()) {
-      if (client.available()) {
-        char c = client.read();
-        Serial.print(c);
-      }
-    }
-
-    // Disconnect from the IFTTT server
-    client.stop();
   }
+  delay(3000);
 }
